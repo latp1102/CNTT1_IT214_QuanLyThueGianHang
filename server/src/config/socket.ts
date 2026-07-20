@@ -110,6 +110,13 @@ export function initSocket(app: express.Application, port: number | string) {
       });
     });
 
+    socket.on("video-call:sticker", (data: { targetId: number; emoji: string }) => {
+      emitToUserSockets(data.targetId, "video-call:sticker", {
+        emoji: data.emoji,
+        fromName: user.username
+      });
+    });
+
     socket.on("disconnect", () => {
       console.log(`[Socket.IO] User disconnected: ${user.username} (${socket.id})`);
       const hasOtherSockets = Array.from(io!.sockets.sockets.values()).some((s) => {

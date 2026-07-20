@@ -3,7 +3,7 @@ import { store } from "../redux/store";
 import { logout, updateAccessToken } from "../redux/slices/authSlice";
 
 const axiosClient = axios.create({
-  baseURL: "http://localhost:5000/api",
+  baseURL: "/api",
   headers: {
     "Content-Type": "application/json"
   }
@@ -73,7 +73,7 @@ axiosClient.interceptors.response.use(
 
       try {
         // Direct call to refresh endpoint
-        const res = await axios.post("http://localhost:5000/api/auth/refresh-token", {
+        const res = await axios.post("/api/auth/refresh-token", {
           refreshToken
         });
 

@@ -204,7 +204,7 @@ export default function Contracts() {
   const [paymentQrModalOpen, setPaymentQrModalOpen] = useState(false);
   const [paymentQrData, setPaymentQrData] = useState<any>(null);
 
-  const API_BASE = "http://localhost:5000/api";
+  const API_BASE = "/api";
 
   const handleDownloadPdf = async (id: number) => {
     try {

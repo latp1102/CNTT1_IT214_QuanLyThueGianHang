@@ -218,7 +218,7 @@ export default function Register() {
               <path fill="#1976D2" d="M43.611 20.083H42V20H24v8h11.303a12.04 12.04 0 0 1-4.087 5.571l.003-.002 6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z" />
             </svg>
           }
-          onClick={() => window.location.href = "http://localhost:5000/api/auth/google"}
+          onClick={() => window.location.href = "/api/auth/google"}
           style={{
             flex: 1, height: 44, borderRadius: 12, fontWeight: 600, fontSize: 14,
             background: "#fff", border: "1px solid #dadce0", color: "#3c4043",
@@ -239,7 +239,7 @@ export default function Register() {
         </Button>
         <Button
           icon={<FacebookOutlined style={{ color: "#fff", fontSize: 18 }} />}
-          onClick={() => window.location.href = "http://localhost:5000/api/auth/facebook"}
+          onClick={() => window.location.href = "/api/auth/facebook"}
           style={{
             flex: 1, height: 44, borderRadius: 12, fontWeight: 600, fontSize: 14,
             background: "linear-gradient(135deg, #1877f2, #1664d9)",

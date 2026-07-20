@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect, createContext, useContext } from "react";
-import { Modal, Button, Space, Avatar, Typography, Badge, Tooltip } from "antd";
+import { Modal, Button, Space, Avatar, Typography, Badge, Tooltip, Popover } from "antd";
 import { useMessage } from "../hooks/useMessage";
-import { PhoneOutlined, PhoneFilled, CloseOutlined, AudioMutedOutlined, AudioOutlined, VideoCameraOutlined, VideoCameraAddOutlined, MinusOutlined } from "@ant-design/icons";
+import { PhoneOutlined, PhoneFilled, CloseOutlined, AudioMutedOutlined, AudioOutlined, VideoCameraOutlined, VideoCameraAddOutlined, MinusOutlined, SwapOutlined, FullscreenOutlined, DesktopOutlined, SmileOutlined, HeartFilled } from "@ant-design/icons";
 import { io, type Socket } from "socket.io-client";
 import { useSelector } from "react-redux";
 
@@ -32,13 +32,22 @@ const VideoCallContext = createContext<VideoCallContextType>({
 
 export const useVideoCall = () => useContext(VideoCallContext);
 
-const SOCKET_URL = "http://localhost:5000";
+const SOCKET_URL = window.location.origin;
 const ICE_SERVERS = {
   iceServers: [
     { urls: "stun:stun.l.google.com:19302" },
     { urls: "stun:stun1.l.google.com:19302" }
   ]
 };
+
+const STICKERS = ["❤️", "😂", "👍", "🎉", "😍", "👏", "🔥", "🚀", "💯", "🎊", "😎", "💪"];
+
+interface FloatingSticker {
+  id: number;
+  emoji: string;
+  x: number;
+  y: number;
+}
 
 export function VideoCallProvider({ children }: { children: React.ReactNode }) {
   const message = useMessage();
@@ -58,6 +67,12 @@ export function VideoCallProvider({ children }: { children: React.ReactNode }) {
   callStateRef.current = callState;
   const [audioMuted, setAudioMuted] = useState(false);
   const [videoOff, setVideoOff] = useState(false);
+  const [facingMode, setFacingMode] = useState<"user" | "environment">("user");
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const screenTrackRef = useRef<MediaStreamTrack | null>(null);
+  const [stickerPickerOpen, setStickerPickerOpen] = useState(false);
+  const [floatingStickers, setFloatingStickers] = useState<FloatingSticker[]>([]);
+  const stickerIdRef = useRef(0);
 
   const cleanupCall = useCallback(() => {
     pendingOfferRef.current = null;
@@ -74,6 +89,10 @@ export function VideoCallProvider({ children }: { children: React.ReactNode }) {
     setMinimized(false);
     setAudioMuted(false);
     setVideoOff(false);
+    setFacingMode("user");
+    setIsScreenSharing(false);
+    screenTrackRef.current = null;
+    setFloatingStickers([]);
   }, []);
 
   const handleEndCall = useCallback(() => {
@@ -196,6 +215,12 @@ export function VideoCallProvider({ children }: { children: React.ReactNode }) {
       cleanupCall();
     });
 
+    socket.on("video-call:sticker", (data: { emoji: string }) => {
+      const id = ++stickerIdRef.current;
+      setFloatingStickers((prev) => [...prev, { id, emoji: data.emoji, x: Math.random() * 60 + 20, y: Math.random() * 30 + 10 }]);
+      setTimeout(() => setFloatingStickers((prev) => prev.filter((s) => s.id !== id)), 2500);
+    });
+
     socket.on("video-call:user-offline", () => {
       message.warning("Người dùng hiện không trực tuyến.");
       cleanupCall();
@@ -257,6 +282,14 @@ export function VideoCallProvider({ children }: { children: React.ReactNode }) {
     }
   }, [cleanupCall]);
 
+  const sendSticker = useCallback((emoji: string) => {
+    if (!socketRef.current || !callStateRef.current.peerId) return;
+    socketRef.current.emit("video-call:sticker", { targetId: callStateRef.current.peerId, emoji });
+    const id = ++stickerIdRef.current;
+    setFloatingStickers((prev) => [...prev, { id, emoji, x: 40, y: 30 }]);
+    setTimeout(() => setFloatingStickers((prev) => prev.filter((s) => s.id !== id)), 2500);
+  }, []);
+
   const toggleMute = () => {
     if (localStreamRef.current) {
       const audioTrack = localStreamRef.current.getAudioTracks()[0];
@@ -277,6 +310,75 @@ export function VideoCallProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const switchCamera = async () => {
+    if (!localStreamRef.current || !pcRef.current) return;
+    const newFacingMode = facingMode === "user" ? "environment" : "user";
+    try {
+      const newStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: newFacingMode }, audio: false });
+      const newVideoTrack = newStream.getVideoTracks()[0];
+      const oldTrack = localStreamRef.current.getVideoTracks()[0];
+      if (oldTrack) {
+        localStreamRef.current.removeTrack(oldTrack);
+        oldTrack.stop();
+      }
+      localStreamRef.current.addTrack(newVideoTrack);
+      const sender = pcRef.current.getSenders().find((s) => s.track?.kind === "video");
+      if (sender) await sender.replaceTrack(newVideoTrack);
+      if (localVideoRef.current) localVideoRef.current.srcObject = localStreamRef.current;
+      setFacingMode(newFacingMode);
+    } catch (err) {
+      console.error("[VideoCall] Error switching camera:", err);
+    }
+  };
+
+  const toggleScreenShare = async () => {
+    if (!pcRef.current) return;
+    if (isScreenSharing) {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      const newVideoTrack = stream.getVideoTracks()[0];
+      if (localStreamRef.current) {
+        const oldScreenTrack = screenTrackRef.current;
+        if (oldScreenTrack) oldScreenTrack.stop();
+        const oldVideoTrack = localStreamRef.current.getVideoTracks()[0];
+        if (oldVideoTrack) localStreamRef.current.removeTrack(oldVideoTrack);
+        localStreamRef.current.addTrack(newVideoTrack);
+      }
+      const sender = pcRef.current.getSenders().find((s) => s.track?.kind === "video");
+      if (sender) await sender.replaceTrack(newVideoTrack);
+      if (localVideoRef.current) localVideoRef.current.srcObject = localStreamRef.current;
+      screenTrackRef.current = null;
+      setIsScreenSharing(false);
+    } else {
+      try {
+        const screenStream = await (navigator.mediaDevices as any).getDisplayMedia({ video: true });
+        const screenTrack = screenStream.getVideoTracks()[0];
+        screenTrack.onended = () => { if (isScreenSharing) toggleScreenShare(); };
+        screenTrackRef.current = screenTrack;
+        if (localStreamRef.current) {
+          const oldVideoTrack = localStreamRef.current.getVideoTracks()[0];
+          if (oldVideoTrack) localStreamRef.current.removeTrack(oldVideoTrack);
+          localStreamRef.current.addTrack(screenTrack);
+        }
+        const sender = pcRef.current.getSenders().find((s) => s.track?.kind === "video");
+        if (sender) await sender.replaceTrack(screenTrack);
+        if (localVideoRef.current) localVideoRef.current.srcObject = localStreamRef.current;
+        setIsScreenSharing(true);
+      } catch (err) {
+        console.error("[VideoCall] Screen share cancelled or failed:", err);
+      }
+    }
+  };
+
+  const toggleFullscreen = () => {
+    const el = remoteVideoRef.current;
+    if (!el) return;
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else {
+      el.requestFullscreen();
+    }
+  };
+
   useEffect(() => {
     if (localVideoRef.current && localStreamRef.current) {
       localVideoRef.current.srcObject = localStreamRef.current;
@@ -288,6 +390,14 @@ export function VideoCallProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <VideoCallContext.Provider value={{ startCall, onlineUsers }}>
+      <style>{`
+        @keyframes stickerFloat {
+          0% { opacity: 1; transform: translateY(0) scale(0.5); }
+          15% { opacity: 1; transform: translateY(-10px) scale(1.2); }
+          30% { opacity: 1; transform: translateY(-20px) scale(1); }
+          100% { opacity: 0; transform: translateY(-120px) scale(0.8); }
+        }
+      `}</style>
       {children}
 
       {callState.status === "incoming" && (
@@ -356,6 +466,23 @@ export function VideoCallProvider({ children }: { children: React.ReactNode }) {
                   playsInline
                   style={{ width: "100%", height: "100%", objectFit: "cover" }}
                 />
+                {floatingStickers.map((s) => (
+                  <div
+                    key={s.id}
+                    style={{
+                      position: "absolute",
+                      left: `${s.x}%`,
+                      top: `${s.y}%`,
+                      fontSize: 40,
+                      pointerEvents: "none",
+                      animation: "stickerFloat 2.5s ease-out forwards",
+                      zIndex: 10,
+                      filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.3))",
+                    }}
+                  >
+                    {s.emoji}
+                  </div>
+                ))}
                 <div style={{
                   position: "absolute",
                   bottom: 8,
@@ -377,18 +504,58 @@ export function VideoCallProvider({ children }: { children: React.ReactNode }) {
                 </div>
               </div>
 
-              <div style={{ display: "flex", justifyContent: "center", gap: 16, marginTop: 12 }}>
+              <div style={{ display: "flex", justifyContent: "center", gap: 12, flexWrap: "wrap", marginTop: 12 }}>
                 <Tooltip title={audioMuted ? "Bật mic" : "Tắt mic"}>
                   <Button shape="circle" icon={audioMuted ? <AudioMutedOutlined /> : <AudioOutlined />} onClick={toggleMute}
                     style={{ width: 44, height: 44, background: audioMuted ? "#ef4444" : "var(--bg-secondary)", color: audioMuted ? "#fff" : "var(--text)", border: "none" }} />
                 </Tooltip>
-                <Tooltip title="Kết thúc cuộc gọi">
-                  <Button shape="circle" danger icon={<PhoneFilled />} onClick={handleEndCall}
-                    style={{ width: 44, height: 44, background: "#ef4444", color: "#fff", border: "none", transform: "rotate(135deg)" }} />
-                </Tooltip>
                 <Tooltip title={videoOff ? "Bật camera" : "Tắt camera"}>
                   <Button shape="circle" icon={videoOff ? <VideoCameraAddOutlined /> : <VideoCameraOutlined />} onClick={toggleVideo}
                     style={{ width: 44, height: 44, background: videoOff ? "#ef4444" : "var(--bg-secondary)", color: videoOff ? "#fff" : "var(--text)", border: "none" }} />
+                </Tooltip>
+                <Tooltip title="Chuyển đổi camera">
+                  <Button shape="circle" icon={<SwapOutlined />} onClick={switchCamera}
+                    style={{ width: 44, height: 44, background: "var(--bg-secondary)", color: "var(--text)", border: "none" }} />
+                </Tooltip>
+                <Tooltip title={isScreenSharing ? "Dừng chia sẻ màn hình" : "Chia sẻ màn hình"}>
+                  <Button shape="circle" icon={<DesktopOutlined />} onClick={toggleScreenShare}
+                    style={{ width: 44, height: 44, background: isScreenSharing ? "#52c41a" : "var(--bg-secondary)", color: isScreenSharing ? "#fff" : "var(--text)", border: "none" }} />
+                </Tooltip>
+                <Tooltip title="Toàn màn hình">
+                  <Button shape="circle" icon={<FullscreenOutlined />} onClick={toggleFullscreen}
+                    style={{ width: 44, height: 44, background: "var(--bg-secondary)", color: "var(--text)", border: "none" }} />
+                </Tooltip>
+                <Popover
+                  content={
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, width: 208 }}>
+                      {STICKERS.map((emoji) => (
+                        <Button
+                          key={emoji}
+                          type="text"
+                          style={{ fontSize: 24, width: 42, height: 42, display: "flex", alignItems: "center", justifyContent: "center" }}
+                          onClick={() => { sendSticker(emoji); setStickerPickerOpen(false); }}
+                        >
+                          {emoji}
+                        </Button>
+                      ))}
+                    </div>
+                  }
+                  open={stickerPickerOpen}
+                  onOpenChange={setStickerPickerOpen}
+                  trigger="click"
+                >
+                  <Tooltip title="Gửi sticker">
+                    <Button shape="circle" icon={<SmileOutlined />}
+                      style={{ width: 44, height: 44, background: "var(--bg-secondary)", color: "var(--text)", border: "none" }} />
+                  </Tooltip>
+                </Popover>
+                <Tooltip title="Thả tim">
+                  <Button shape="circle" icon={<HeartFilled />} onClick={() => sendSticker("❤️")}
+                    style={{ width: 44, height: 44, background: "#ff4d4f", color: "#fff", border: "none" }} />
+                </Tooltip>
+                <Tooltip title="Kết thúc cuộc gọi">
+                  <Button shape="circle" danger icon={<PhoneFilled />} onClick={handleEndCall}
+                    style={{ width: 44, height: 44, background: "#ef4444", color: "#fff", border: "none", transform: "rotate(135deg)" }} />
                 </Tooltip>
               </div>
             </div>

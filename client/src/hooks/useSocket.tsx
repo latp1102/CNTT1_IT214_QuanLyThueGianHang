@@ -4,7 +4,7 @@ import { notification } from "antd";
 import { CheckCircleOutlined, WarningOutlined, InfoCircleOutlined, ShopOutlined } from "@ant-design/icons";
 import { useSelector } from "react-redux";
 
-const SOCKET_URL = "http://localhost:5000";
+const SOCKET_URL = window.location.origin;
 
 export function useSocket() {
   const socketRef = useRef<Socket | null>(null);

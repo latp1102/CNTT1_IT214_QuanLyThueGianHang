@@ -113,7 +113,7 @@ export default function Invoices() {
   const handleExportPdf = async (id: number) => {
     try {
       const token = localStorage.getItem("accessToken");
-      const url = `http://localhost:5000/api/invoices/${id}/pdf?token=${token}`;
+      const url = `/api/invoices/${id}/pdf?token=${token}`;
       const printWindow = window.open(url, "_blank");
       if (printWindow) {
         printWindow.focus();
@@ -125,7 +125,7 @@ export default function Invoices() {
 
   const handleExportExcel = async (id: number) => {
     try {
-      const response = await fetch(`http://localhost:5000/api/invoices/${id}/excel`, {
+      const response = await fetch(`/api/invoices/${id}/excel`, {
         headers: {
           Authorization: `Bearer ${localStorage.getItem("accessToken")}`
         }

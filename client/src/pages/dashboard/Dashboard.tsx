@@ -213,7 +213,7 @@ export default function Dashboard() {
     fetchStats();
     fetchBooths();
 
-    const socket = io("http://localhost:5000", { transports: ["websocket", "polling"] });
+    const socket = io(window.location.origin, { transports: ["websocket", "polling"] });
     socketRef.current = socket;
     socket.on("notification", () => refreshData());
     socket.on("booth-updated", () => {
